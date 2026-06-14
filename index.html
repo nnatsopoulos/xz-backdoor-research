@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<!--
+  CVE-2024-3094 Research Toolkit
+  XZ Utils Backdoor — Attack Surface Visualiser & System Checker
+
+  Copyright (c) 2026 Nikolaos Natsopoulos
+  Licensed under the MIT License
+
+  Built as part of independent security research.
+  Accompanies the report: "CVE-2024-3094: Supply Chain Compromise via
+  Social Engineering and Build System Manipulation in XZ Utils"
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CVE-2024-3094 — XZ Utils Research Toolkit</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header -->
+  <div class="hdr">
+    <span class="badge badge-red">CVE-2024-3094</span>
+    <span class="badge badge-outline">CVSS 10.0</span>
+    <span class="hdr-title">XZ Utils Backdoor — Research Toolkit</span>
+    <span id="live-badge" style="display:none" class="badge badge-live">LIVE SYSTEM VIEW</span>
+    <div class="tab-wrap">
+      <button class="tab-btn active" data-tab="visualiser" onclick="setTab('visualiser')">ATTACK VISUALISER</button>
+      <button class="tab-btn inactive" data-tab="checker" onclick="setTab('checker')">SYSTEM CHECKER</button>
+    </div>
+  </div>
+
+  <!-- App body — swapped by JS -->
+  <div id="app-body" style="display:flex;flex:1;overflow:hidden">
+    <div class="app" id="visualiser-body">
+      <div class="left-panel" id="left-panel"></div>
+      <div class="canvas"     id="canvas"></div>
+      <div class="info-panel" id="info-panel"></div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
