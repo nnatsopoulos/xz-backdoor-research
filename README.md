@@ -6,6 +6,7 @@ Interactive browser-based tool accompanying the research report:
 
 **"CVE-2024-3094: Supply Chain Compromise via Social Engineering and Build System Manipulation in XZ Utils"**
 
+**10.5281/zenodo.20700609**
 ---
 
 ## About
