@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<!--
+  CVE-2024-3094 Research Toolkit
+  XZ Utils Backdoor - Attack Surface Visualiser & System Checker
+
+  Copyright (c) 2026 Nikolaos Natsopoulos
+
+  MIT License
+
+  Permission is hereby granted, free of charge, to any person obtaining
+  a copy of this software and associated documentation files (the "Software"),
+  to deal in the Software without restriction, including without limitation
+  the rights to use, copy, modify, merge, publish, distribute, sublicense,
+  and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included
+  in all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+  OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+  THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  DEALINGS IN THE SOFTWARE.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CVE-2024-3094 - XZ Utils Research Toolkit</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#0D1117;color:#C9D1D9;font-family:Inter,system-ui,sans-serif;height:100vh;overflow:hidden}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#30363D;border-radius:3px}
+textarea{color:#C9D1D9;font-family:'Courier New',monospace}
+textarea::placeholder{color:#30363D}
+button{font-family:Inter,system-ui,sans-serif}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useCallback,createElement:h} = React;
+
+const C = {
+  bg:"#0D1117",surface:"#161B22",border:"#21262D",
+  border2:"#30363D",text:"#C9D1D9",muted:"#8B949E",
+  blue:"#58A6FF",red:"#F85149",green:"#3FB950",yellow:"#E3B341",
+};
+
+const phases = [
+  {color:"blue",eyebrow:"Phase 0 · Jan 2021",heading:"Account Creation & Dormancy",
+   body:"The GitHub account JiaT75 (Jia Tan) is registered on 26 January 2021. No activity follows for months.\n\nThis dormancy period is consistent with operational preparation - establishing a persistent identity with an aged creation date to reduce suspicion on future contributions.",
+   code:null,tags:[["blue","T1078 - Valid Accounts"],["blue","Identity Fabrication"]],iam:null,chainState:"clean"},
+  {color:"blue",eyebrow:"Phase 1 · Jan–Nov 2022",heading:"Legitimate Contribution Phase",
+   body:"JiaT75 begins submitting technically sound, genuinely helpful patches to XZ Utils and other projects including libarchive. Over 450 commits across 2+ years.\n\nOne early libarchive PR subtly replaced safe_fprintf() with the unsafe fprintf(). Otherwise, work is entirely legitimate.\n\nThis phase builds the reputation capital that will later be spent.",
+   code:[{t:"c",v:"# libarchive PR - ostensibly innocuous"},{t:"r",v:"- safe_fprint(f, ...);"},{t:"g",v:"+ fprintf(f, ...);"},{t:"c",v:"# Replaces safe variant with unsafe one"}],
+   tags:[["yellow","Supply Chain Prep"],["blue","T1195.001 - Software Dependencies"]],iam:null,chainState:"clean"},
+  {color:"yellow",eyebrow:"Phase 2 · May–Dec 2022",heading:"Sockpuppet Pressure Campaign",
+   body:"Coordinated fake identities - Jigar Kumar, Dennis Ens, krygorin4545, misoeater91 - appear on the xz-devel mailing list.\n\nAll accounts created post-2021. All pressure Lasse Collin (sole XZ maintainer) to delegate maintenance, citing slow releases and burnout.\n\nCollin - a single volunteer maintaining infrastructure used by millions - responds to what appears to be legitimate community concern.",
+   code:[{t:"c",v:"# xz-devel mailing list, ~May 2022"},{t:"y",v:'"Jia Tan seems very capable. Why not'},{t:"y",v:' give him commit access?"'},{t:"c",v:"                - Jigar Kumar (fake)"}],
+   tags:[["yellow","Social Engineering"],["yellow","T1585 - Establish Accounts"],["red","Insider Threat Pattern"]],iam:null,chainState:"clean"},
+  {color:"yellow",eyebrow:"Phase 3 · Dec 2022–2023",heading:"Maintainer Role Acquired",
+   body:"JiaT75 gains co-maintainer status. The XZ project migrates from SourceForge to GitHub - with JiaT75 creating the organisation and setting their email as the default project contact.\n\nThis grants organisational admin control: the ability to create and sign official releases.\n\nFor the IAM analyst: this is privilege escalation via social trust - no technical exploit was needed to gain release authority.",
+   code:[{t:"c",v:"# Dec 2022 - GitHub org created by JiaT75"},{t:"n",v:"github.com/tukaani-project/xz"},{t:"y",v:"Owner:   JiaT75 (attacker)"},{t:"c",v:"Contact: xz@tukaani.org -> attacker email"},{t:"g",v:"Collin:  contributor (no longer sole owner)"}],
+   tags:[["red","Privilege Escalation"],["yellow","T1098 - Account Manipulation"],["red","No Dual Control"]],
+   iam:{control:"Maintainer Role Grant",failure:"Single-person approval for privileged role. No background verification. No formal offboarding process defined."},chainState:"clean"},
+  {color:"yellow",eyebrow:"Phase 4 · Jul 2023",heading:"oss-fuzz IFUNC Disabled",
+   body:"JiaT75 submits a PR to google/oss-fuzz disabling IFUNC (Indirect Function) fuzzing for XZ Utils.\n\nIFUNC is the exact glibc mechanism the backdoor will later exploit. Disabling this ensures automated detection of the planned hook is prevented before the payload is inserted.\n\nThis is a preparatory countermeasure - arguably the clearest indicator of premeditation in the entire operation.",
+   code:[{t:"c",v:"# oss-fuzz PR by JiaT75, Jul 2023"},{t:"r",v:"- CFLAGS += -DIFUNC_SUPPORT"},{t:"g",v:"+ # IFUNC fuzzing disabled"},{t:"c",v:"# Effect: oss-fuzz will no longer detect"},{t:"c",v:"# anomalies in IFUNC resolution paths"}],
+   tags:[["red","Defense Evasion"],["red","T1562 - Disable Security Tools"],["yellow","IFUNC / glibc"]],iam:null,chainState:"clean"},
+  {color:"red",eyebrow:"Phase 5 · 22 Jan 2024",heading:"Malicious Payload Committed",
+   body:"The first malicious commit is introduced. The payload is NOT in the source code - hidden inside binary files disguised as test data:\n\n- tests/files/bad-3-corrupt_lzma2.xz\n- tests/files/good-large_compressed.lzma\n\nThe build system modification in m4/build-to-host.m4 extracts and links a malicious object file during compilation - but only when building from the tarball, not the git repo.",
+   code:[{t:"c",v:"# m4/build-to-host.m4 (tarball only)"},{t:"r",v:"am__test_x='sed s/a/x/g'"},{t:"r",v:"| tr \"\\t -_\" \" \\t_-\""},{t:"r",v:"| xz -d | /bin/sh >&6 2>&1"},{t:"c",v:"# Extracts & executes hidden payload"},{t:"c",v:"# from binary test files at build time"}],
+   tags:[["red","T1554 - Compromise Client Software"],["red","Build Injection"],["red","Binary Obfuscation"]],iam:null,chainState:"injected"},
+  {color:"red",eyebrow:"Phase 6 · 24 Feb 2024",heading:"XZ 5.6.0 Released (backdoored)",
+   body:"XZ Utils 5.6.0 is released as an official tarball, signed by JiaT75's GPG key.\n\nLinux distributions begin pulling this version into testing and unstable branches. The backdoored liblzma begins being compiled into sshd on affected systems.\n\nCritically: the GitHub repository appears completely clean - the backdoor only exists in the distributed tarball.",
+   code:[{t:"c",v:"# Tarball vs. Git repo divergence"},{t:"r",v:"tarball: xz-5.6.0.tar.gz"},{t:"r",v:"  build-to-host.m4  <- MALICIOUS"},{t:"r",v:"  tests/files/*.xz  <- PAYLOAD"},{t:"n",v:""},{t:"g",v:"git:    github.com/tukaani-project/xz"},{t:"g",v:"  build-to-host.m4  <- CLEAN"},{t:"g",v:"  tests/files/*.xz  <- CLEAN"}],
+   tags:[["red","Supply Chain Delivery"],["red","Tarball vs Git Divergence"],["yellow","GPG-signed (attacker key)"]],iam:null,chainState:"injected",showMatrix:true},
+  {color:"red",eyebrow:"Phase 7 · 9 Mar 2024",heading:"XZ 5.6.1 Released (refined)",
+   body:"XZ 5.6.1 is released quickly after 5.6.0 to fix reliability issues with the backdoor - some hook failures were causing detectable crashes.\n\nThis rapid follow-up release is a notable OPSEC mistake. On 25 March 2024, a fake account pressures Debian maintainers to fast-track the backdoored version into stable - attempting to maximise deployment before detection.",
+   code:[{t:"c",v:"# Debian bug #1067708 - filed 25 Mar 2024"},{t:"y",v:'"Please update xz-utils to 5.6.1.'},{t:"y",v:' The new version fixes important bugs."'},{t:"c",v:"         - Hans Jansen (fake identity)"},{t:"n",v:""},{t:"g",v:"# Debian: under review (not fast-tracked)"}],
+   tags:[["red","5.6.1 Backdoored"],["yellow","OPSEC Error - rapid re-release"],["red","Sockpuppet dist. pressure"]],iam:null,chainState:"injected",showMatrix:true},
+  {color:"red",eyebrow:"Phase 8 · Build Time",heading:"Build System Injection (3 Stages)",
+   body:"When a distribution builds XZ from the backdoored tarball, injection occurs in three stages:\n\nStage 1 - Modified build-to-host.m4 triggers a sed/tr/xz pipeline, extracting a hidden shell script from the binary test files.\n\nStage 2 - The shell script decodes a prebuilt .o object file using RC4, linking it into the final liblzma at compile time.\n\nStage 3 - The object file registers IFUNC resolvers via glibc that override RSA_public_decrypt() at runtime.",
+   code:[{t:"c",v:"# Stage 1: configure script injection"},{t:"r",v:"| sed 's/\\t/ /g' | tr ' \\t' '\\t '"},{t:"r",v:"| xz -d | /bin/sh"},{t:"n",v:""},{t:"c",v:"# Stage 2: RC4-decoded object file"},{t:"r",v:'eval $(echo "yolAbejyiejuvnup=" | ...)'},{t:"n",v:""},{t:"c",v:"# Stage 3: IFUNC hook registration"},{t:"r",v:'__attribute__((ifunc("resolve_RSA")))'}],
+   tags:[["red","3-Stage Injection"],["red","IFUNC Override"],["red","RC4 Obfuscation"]],iam:null,chainState:"injected"},
+  {color:"red",eyebrow:"Phase 9 · Runtime",heading:"RSA_public_decrypt() Hook Active",
+   body:"At runtime, any process loading the backdoored liblzma has RSA_public_decrypt() silently replaced via the IFUNC resolver.\n\nFor sshd - which links liblzma via libsystemd - every SSH auth attempt passes through the hooked function. The hook checks RSA public modulus N (bytes 0-15) for a command number:\n\n0x01 - SSH authentication bypass\n0x02 - Execute shell command\n0x03 - Execute with specified UID/GID\n\nOnly a client with a valid Ed448-signed payload triggers this. No log entries generated.",
+   code:[{t:"c",v:"# Hook checks RSA struct N value"},{t:"r",v:"cmd = N[0..15] % 4;"},{t:"n",v:""},{t:"r",v:"if (verify_ed448_sig(N)) {"},{t:"r",v:"  switch(cmd) {"},{t:"r",v:"    case 0x01: bypass_auth();"},{t:"r",v:"    case 0x02: exec_cmd(payload);"},{t:"r",v:"    case 0x03: exec_uid(payload);"},{t:"r",v:"  }"},{t:"r",v:"} else {"},{t:"g",v:"  // normal auth -- no trace"},{t:"r",v:"}"}],
+   tags:[["red","Auth Bypass"],["red","RCE as root"],["red","Ed448 key-gated"],["red","Zero log entries"]],
+   iam:{control:"Authentication Stack Integrity",failure:"The authentication mechanism itself was compromised. MFA, PAM, RBAC - all operate above this layer. None would have been effective against this attack vector."},
+   chainState:"runtime",showAttacker:true},
+  {color:"green",eyebrow:"Discovery · 27–29 Mar 2024",heading:"Freund Discovery - The 500ms Anomaly",
+   body:"Andres Freund (Microsoft / PostgreSQL) notices SSH logins on a Debian Sid system taking ~500ms instead of ~100ms.\n\nHe runs top - sshd is consuming anomalous CPU during idle connections. He runs Valgrind - it flags unexpected syscalls in liblzma.\n\nTracing back, he finds the release tarball version of liblzma contains functions absent from GitHub source.\n\nDetection method: accidental human observation. No automated tool flagged it.",
+   code:[{t:"c",v:"# Freund's initial observation"},{t:"y",v:"$ ssh user@host"},{t:"y",v:"... 500ms delay (expected: ~100ms)"},{t:"n",v:""},{t:"c",v:"# Valgrind reveals the anomaly"},{t:"g",v:"$ valgrind sshd -t"},{t:"r",v:"==PID== Invalid read in liblzma.so"},{t:"r",v:"==PID== Unexpected syscall in lzma_check"},{t:"n",v:""},{t:"c",v:"# Binary diff: tarball vs. git build"},{t:"r",v:"Only in tarball: _get_cpuid symbol"}],
+   tags:[["green","Human Detection"],["green","Valgrind"],["yellow","No automated tool flagged"],["green","29 Mar 2024"]],iam:null,chainState:"discovery"},
+  {color:"green",eyebrow:"Response · 29 Mar 2024+",heading:"Coordinated Rollback & Patch",
+   body:"Within hours of Freund's public disclosure:\n\n- Debian - rolled back XZ across all distributions\n- Red Hat - emergency advisory RHSA-2024:1618\n- CISA - public alert, recommending downgrade to XZ 5.4.6\n- Arch, Kali, openSUSE - advisories and rollbacks\n- GitHub - XZ repository suspended\n\nCritical: the backdoor had NOT reached any stable production distribution. Caught approximately 5 weeks before stable release.",
+   code:[{t:"c",v:"# CISA recommendation"},{t:"g",v:"$ apt install xz-utils=5.4.6"},{t:"g",v:"$ dnf downgrade xz-5.4.6"},{t:"n",v:""},{t:"c",v:"# Verify installed version"},{t:"g",v:"$ xz --version"},{t:"g",v:"xz (XZ Utils) 5.4.6"},{t:"g",v:"liblzma 5.4.6  <- safe"}],
+   tags:[["green","Coordinated Response"],["green","No stable distro affected"],["green","CISA advisory"]],iam:null,chainState:"clean"},
+  {color:"blue",eyebrow:"IAM Analysis",heading:"IAM Control Effectiveness Matrix",
+   body:"The XZ attack represents a novel IAM failure mode: compromise of the authentication mechanism itself rather than credential theft or authorisation bypass.\n\nTraditional IAM frameworks assume the integrity of the layers below them. This attack invalidated that assumption by operating at the liblzma / IFUNC layer - below PAM, below RBAC, below MFA.\n\nThe table maps common IAM controls to their effectiveness against this specific attack vector.",
+   code:null,tags:[["blue","IAM Analysis"],["red","Auth Stack Compromise"],["yellow","NIST 800-161"],["blue","ATT&CK T1195.001"]],
+   iam:null,chainState:"clean",showIAMTable:true},
+];
+
+const iamRows=[
+  ["Multi-Factor Authentication (MFA)","none","Bypassed - hook fires before auth logic"],
+  ["PAM (Pluggable Auth Modules)","none","Operates above the hooked layer"],
+  ["SELinux / AppArmor","partial","Restricts post-exploit movement, not injection"],
+  ["SSH Key Management / Rotation","none","Key validity irrelevant - hook bypasses check"],
+  ["Zero Trust Network Access","none","Authentication itself is compromised"],
+  ["SBOM / Dependency Inventory","partial","Identifies component presence, not malicious content"],
+  ["Code Signing (GPG)","none","Attacker signed releases with their own trusted key"],
+  ["Multi-party release approval","high","Would require second maintainer to verify tarball"],
+  ["Tarball vs. Git diff check","high","Would detect build-to-host.m4 divergence"],
+  ["Runtime binary integrity (IMA/dm-verity)","high","Would detect modified liblzma at load time"],
+  ["Anomaly detection / perf monitoring","high","500ms SSH delay - how it was actually found"],
+  ["Least Privilege on release role","high","No single maintainer should have sole release authority"],
+];
+
+const vulnMatrix=[
+  {name:"Debian Sid / Unstable",vuln:true,reason:"glibc + XZ 5.6.x + systemd OpenSSH"},
+  {name:"Fedora Rawhide / F40b",vuln:true,reason:"glibc + XZ 5.6.x + systemd OpenSSH"},
+  {name:"Kali (Mar 26-28)",vuln:true,reason:"glibc + XZ 5.6.x + systemd OpenSSH"},
+  {name:"Arch Linux",vuln:false,reason:"No systemd sshd patch applied"},
+  {name:"Debian Stable",vuln:false,reason:"XZ version <= 5.4.x in stable repos"},
+  {name:"Ubuntu LTS",vuln:false,reason:"XZ version <= 5.4.x in stable repos"},
+  {name:"RHEL / Amazon Linux",vuln:false,reason:"Stable branch, XZ 5.4.x"},
+  {name:"Gentoo / NixOS",vuln:false,reason:"No systemd OpenSSH patch"},
+];
+
+const phaseGroups=[
+  {label:"Attack Phases",indices:[0,1,2,3,4]},
+  {label:"Injection",indices:[5,6,7,8,9]},
+  {label:"Discovery & Response",indices:[10,11]},
+  {label:"IAM Perspective",indices:[12]},
+];
+
+function parseXZVersion(raw){const m=raw.match(/(\d+)\.(\d+)\.(\d+)/);if(!m)return null;return{major:parseInt(m[1]),minor:parseInt(m[2]),patch:parseInt(m[3]),str:m[0]};}
+
+function checkVulnerability(xzRaw,lddRaw,sshdRaw){
+  const checks=[];let vulnerable=true;
+  const ver=parseXZVersion(xzRaw);
+  if(!ver){checks.push({key:"xz",label:"XZ Utils version",status:"unknown",detail:"Could not parse version. Expected: xz (XZ Utils) 5.x.x"});vulnerable=false;}
+  else{const bad=ver.major===5&&ver.minor===6&&(ver.patch===0||ver.patch===1);
+    checks.push({key:"xz",label:"XZ Utils version",status:bad?"fail":"pass",detail:bad?`Version ${ver.str} is backdoored (5.6.0 and 5.6.1 contain the malicious payload).`:`Version ${ver.str} is not affected. Only 5.6.0 and 5.6.1 contain the backdoor.`});
+    if(!bad)vulnerable=false;}
+  const hasLzma=/liblzma/i.test(lddRaw);
+  checks.push({key:"lzma",label:"liblzma linked into sshd",status:hasLzma?"fail":"pass",detail:hasLzma?"liblzma is present in sshd's dynamic library chain - the backdoor injection path exists.":"liblzma is NOT linked into sshd. The hook has no injection path. System not affected via this vector."});
+  if(!hasLzma)vulnerable=false;
+  const hasSystemd=/libsystemd/i.test(lddRaw);
+  checks.push({key:"systemd",label:"libsystemd linked into sshd",status:hasSystemd?"fail":"pass",detail:hasSystemd?"libsystemd present. This distro applies the sd_notify patch to OpenSSH, creating the liblzma dependency.":"libsystemd NOT found. This distro does not patch OpenSSH with sd_notify - liblzma linkage is absent."});
+  if(!hasSystemd)vulnerable=false;
+  const hasGlibc=/libc\.so|glibc|libc-\d/i.test(lddRaw);
+  checks.push({key:"glibc",label:"glibc present (IFUNC support)",status:hasGlibc?"fail":"pass",detail:hasGlibc?"glibc detected. IFUNC resolver mechanism available - required for the backdoor's function hook.":"glibc NOT detected (possibly musl). IFUNC is not supported - backdoor cannot execute."});
+  if(!hasGlibc)vulnerable=false;
+  const sshdActive=/^active/im.test(sshdRaw);
+  checks.push({key:"sshd",label:"SSH daemon running",status:sshdActive?"fail":"pass",detail:sshdActive?"sshd is active. A running SSH daemon with the backdoored liblzma loaded is the final exploitation condition.":"sshd is not active. Even with the backdoored library present, there is no active attack surface."});
+  if(!sshdActive)vulnerable=false;
+  const xzVer=parseXZVersion(xzRaw);
+  return{checks,vulnerable,systemProfile:{hasLzma,hasSystemd,hasGlibc,sshdActive,xzVersion:xzVer?.str||"unknown",xzBad:xzVer?(xzVer.major===5&&xzVer.minor===6&&(xzVer.patch===0||xzVer.patch===1)):false}};
+}
+
+const s={
+  page:{background:C.bg,color:C.text,height:"100vh",display:"flex",flexDirection:"column",fontFamily:"Inter,system-ui,sans-serif",overflow:"hidden"},
+  hdr:{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"10px 18px",display:"flex",alignItems:"center",gap:10,flexShrink:0,flexWrap:"wrap"},
+  badge:(bg,border,color)=>({fontFamily:"monospace",fontSize:10,fontWeight:600,padding:"3px 8px",borderRadius:4,background:bg,border,color,letterSpacing:".08em"}),
+  tabWrap:{display:"flex",gap:2,background:C.bg,borderRadius:6,padding:2,border:`1px solid ${C.border}`},
+  tab:(active)=>({fontFamily:"monospace",fontSize:10,fontWeight:600,padding:"5px 14px",borderRadius:4,border:"none",cursor:"pointer",letterSpacing:".06em",background:active?C.blue:"transparent",color:active?"#0D1117":C.muted,transition:"all .12s"}),
+  body:{display:"grid",gridTemplateColumns:"210px 1fr 290px",flex:1,overflow:"hidden"},
+  leftPanel:{background:C.surface,borderRight:`1px solid ${C.border}`,overflowY:"auto",paddingTop:14},
+  groupLabel:{fontFamily:"monospace",fontSize:9,fontWeight:600,letterSpacing:".12em",color:C.muted,textTransform:"uppercase",padding:"0 14px 6px"},
+  divider:{height:1,background:C.border,margin:"6px 14px"},
+  phaseItem:(active,ac)=>({display:"flex",alignItems:"flex-start",gap:9,padding:"9px 14px",cursor:"pointer",borderLeft:`2px solid ${active?ac:"transparent"}`,background:active?`${ac}12`:"transparent",transition:"all .12s"}),
+  phaseDot:(active,ac)=>({width:7,height:7,borderRadius:"50%",marginTop:4,flexShrink:0,background:active?ac:C.border2,transition:"background .12s"}),
+  phaseDate:{fontFamily:"monospace",fontSize:9,color:C.muted,marginBottom:2},
+  phaseTitle:{fontSize:11,fontWeight:500,color:C.text,lineHeight:1.4},
+  canvas:{overflowY:"auto",padding:"20px 18px",display:"flex",flexDirection:"column",alignItems:"center",gap:18},
+  canvasTitle:{fontFamily:"monospace",fontSize:10,color:C.muted,letterSpacing:".1em",textTransform:"uppercase",alignSelf:"flex-start"},
+  infoPanel:{background:C.surface,borderLeft:`1px solid ${C.border}`,overflowY:"auto",padding:"18px 15px",display:"flex",flexDirection:"column",gap:14},
+  eyebrow:{fontFamily:"monospace",fontSize:9,fontWeight:600,letterSpacing:".14em",textTransform:"uppercase",color:C.muted,marginBottom:4},
+  infoTitle:{fontSize:14,fontWeight:600,color:C.text,lineHeight:1.4,marginBottom:9},
+  infoBody:{fontSize:11,lineHeight:1.75,color:C.muted},
+  codeBlock:{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:12,fontFamily:"monospace",fontSize:10,lineHeight:1.8,overflowX:"auto",whiteSpace:"pre"},
+  tagRow:{display:"flex",flexWrap:"wrap",gap:5},
+  tag:(color)=>{const m={red:{border:"rgba(248,81,73,.5)",color:C.red,bg:"rgba(248,81,73,.08)"},green:{border:"rgba(63,185,80,.5)",color:C.green,bg:"rgba(63,185,80,.08)"},yellow:{border:"rgba(227,179,65,.5)",color:C.yellow,bg:"rgba(227,179,65,.08)"},blue:{border:"rgba(88,166,255,.5)",color:C.blue,bg:"rgba(88,166,255,.08)"}}[color]||{border:C.border2,color:C.muted,bg:"transparent"};return{fontFamily:"monospace",fontSize:9,fontWeight:600,padding:"3px 8px",borderRadius:4,border:`1px solid ${m.border}`,color:m.color,background:m.bg,letterSpacing:".04em"}},
+  divLine:{height:1,background:C.border},
+  iamNote:{fontFamily:"monospace",fontSize:9,fontWeight:600,letterSpacing:".14em",textTransform:"uppercase",color:C.muted,marginBottom:5},
+  checkerGrid:{display:"grid",gridTemplateColumns:"1fr 1fr",flex:1,overflow:"hidden"},
+  inputSide:{overflowY:"auto",padding:"22px 20px",display:"flex",flexDirection:"column",gap:16,borderRight:`1px solid ${C.border}`},
+  resultSide:{overflowY:"auto",padding:"22px 20px",display:"flex",flexDirection:"column",gap:14},
+  cmdBox:{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:"12px 14px",display:"flex",flexDirection:"column",gap:7},
+  cmdLabel:{fontFamily:"monospace",fontSize:9,fontWeight:600,letterSpacing:".12em",textTransform:"uppercase",color:C.muted,marginBottom:2},
+  cmdRow:{display:"flex",alignItems:"center",gap:10},
+  cmdName:{fontFamily:"monospace",fontSize:10,color:C.muted,width:130,flexShrink:0},
+  cmdVal:{fontFamily:"monospace",fontSize:10,color:C.blue,background:"rgba(88,166,255,.08)",padding:"2px 8px",borderRadius:4,border:"1px solid rgba(88,166,255,.2)"},
+  taLabel:{fontFamily:"monospace",fontSize:10,fontWeight:600,color:C.muted,letterSpacing:".1em",textTransform:"uppercase"},
+  taCmd:{fontFamily:"monospace",fontSize:10,color:C.blue,background:"rgba(88,166,255,.08)",padding:"2px 8px",borderRadius:4,border:"1px solid rgba(88,166,255,.2)"},
+  textarea:{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:"10px 12px",fontFamily:"monospace",fontSize:10,lineHeight:1.7,resize:"vertical",outline:"none",width:"100%"},
+  analyseBtn:{flex:1,background:C.blue,border:"none",borderRadius:6,padding:"10px",fontFamily:"monospace",fontSize:11,fontWeight:600,color:"#0D1117",cursor:"pointer",letterSpacing:".04em"},
+  resetBtn:{background:"transparent",border:`1px solid ${C.border2}`,borderRadius:6,padding:"10px 16px",fontFamily:"monospace",fontSize:11,color:C.muted,cursor:"pointer"},
+  verdict:(vuln)=>({background:vuln?"rgba(248,81,73,.08)":"rgba(63,185,80,.08)",border:`1px solid ${vuln?"rgba(248,81,73,.4)":"rgba(63,185,80,.4)"}`,borderRadius:8,padding:"14px 16px"}),
+  verdictTitle:(vuln)=>({fontSize:20,fontWeight:700,color:vuln?C.red:C.green,marginBottom:6}),
+  visualBtn:{background:"transparent",border:`1px solid ${C.blue}`,borderRadius:6,padding:"10px",fontFamily:"monospace",fontSize:11,fontWeight:600,color:C.blue,cursor:"pointer",letterSpacing:".04em",display:"flex",alignItems:"center",justifyContent:"center",gap:8},
+  checkCard:{background:C.surface,border:`1px solid ${C.border}`,borderRadius:6,padding:"11px 13px",display:"flex",flexDirection:"column",gap:5},
+  checkTop:{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8},
+  checkName:{fontSize:11,fontWeight:600,color:C.text},
+  checkBadge:(s)=>({fontFamily:"monospace",fontSize:9,fontWeight:700,color:s==="fail"?C.red:s==="pass"?C.green:C.yellow,flexShrink:0,background:`${s==="fail"?C.red:s==="pass"?C.green:C.yellow}18`,padding:"2px 8px",borderRadius:4,border:`1px solid ${s==="fail"?C.red:s==="pass"?C.green:C.yellow}44`}),
+  checkDetail:{fontSize:10,color:C.muted,lineHeight:1.6},
+  remBox:{background:"rgba(227,179,65,.06)",border:"1px solid rgba(227,179,65,.3)",borderRadius:6,padding:"12px 14px"},
+  remTitle:{fontFamily:"monospace",fontSize:9,fontWeight:600,letterSpacing:".12em",textTransform:"uppercase",color:C.yellow,marginBottom:8},
+  remCode:{fontFamily:"monospace",fontSize:10,lineHeight:1.9},
+  matrixTitle:{fontFamily:"monospace",fontSize:10,color:C.muted,letterSpacing:".1em",textTransform:"uppercase",marginBottom:10},
+  matrixGrid:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8},
+  matrixCell:(vuln)=>({background:vuln?"rgba(248,81,73,.05)":"rgba(63,185,80,.05)",border:`1px solid ${vuln?"rgba(248,81,73,.4)":"rgba(63,185,80,.4)"}`,borderRadius:6,padding:"10px 12px"}),
+  matrixName:(vuln)=>({fontFamily:"monospace",fontSize:11,fontWeight:600,color:vuln?C.red:C.green,marginBottom:3}),
+  matrixReason:{fontSize:10,color:C.muted,marginBottom:4},
+  matrixStatus:(vuln)=>({fontFamily:"monospace",fontSize:10,fontWeight:700,color:vuln?C.red:C.green}),
+  iamTable:{width:"100%",borderCollapse:"collapse",fontSize:11},
+  iamTh:{textAlign:"left",fontFamily:"monospace",fontSize:9,fontWeight:600,letterSpacing:".1em",textTransform:"uppercase",color:C.muted,paddingBottom:8,borderBottom:`1px solid ${C.border}`},
+  iamTd:{padding:"7px 8px 7px 0",borderBottom:`1px solid ${C.border}`,verticalAlign:"top",color:C.text,fontWeight:500,lineHeight:1.4},
+  iamTd2:{padding:"7px 0",borderBottom:`1px solid ${C.border}`,verticalAlign:"top"},
+  iamEff:(e)=>({fontFamily:"monospace",fontSize:9,fontWeight:700,color:e==="none"?C.red:e==="partial"?C.yellow:C.green}),
+  liveBox:{margin:"0 14px 12px",background:"rgba(88,166,255,.08)",border:"1px solid rgba(88,166,255,.3)",borderRadius:6,padding:"10px 12px"},
+  liveLabel:{fontFamily:"monospace",fontSize:9,fontWeight:600,letterSpacing:".1em",textTransform:"uppercase",color:C.blue,marginBottom:5},
+  liveDesc:{fontSize:10,color:C.muted,lineHeight:1.5,marginBottom:8},
+  clearBtn:{fontFamily:"monospace",fontSize:9,fontWeight:600,color:C.muted,background:"transparent",border:`1px solid ${C.border2}`,borderRadius:4,padding:"3px 8px",cursor:"pointer",width:"100%"},
+  profileRow:{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:`1px solid ${C.border}`},
+  profileLabel:{fontSize:11,color:C.muted},
+  profileVal:(bad)=>({fontFamily:"monospace",fontSize:11,fontWeight:700,color:bad?C.red:C.green}),
+};
+
+const codeCol={c:C.muted,r:C.red,g:C.green,y:C.yellow,n:"transparent",b:C.blue};
+
+function CodeBlock({lines}){
+  if(!lines)return null;
+  return h("div",{style:s.codeBlock},lines.map((l,i)=>h("div",{key:i,style:{color:codeCol[l.t]||C.text}},l.v||"\u00a0")));
+}
+
+function Tag({color,label}){return h("span",{style:s.tag(color)},label);}
+
+function IAMTable(){
+  return h("table",{style:s.iamTable},
+    h("thead",null,h("tr",null,
+      h("th",{style:s.iamTh},"Control"),
+      h("th",{style:{...s.iamTh,width:65}},"Effect")
+    )),
+    h("tbody",null,...iamRows.map(([ctrl,eff,note],i)=>
+      h("tr",{key:i},
+        h("td",{style:s.iamTd},ctrl,h("br"),h("span",{style:{fontSize:10,color:C.muted,fontWeight:400}},note)),
+        h("td",{style:s.iamTd2},h("span",{style:s.iamEff(eff)},eff.toUpperCase()))
+      )
+    ))
+  );
+}
+
+function VulnMatrix(){
+  return h("div",{style:{width:"100%"}},
+    h("div",{style:s.matrixTitle},"Configuration Vulnerability Matrix"),
+    h("div",{style:s.matrixGrid},...vulnMatrix.map((m,i)=>
+      h("div",{key:i,style:s.matrixCell(m.vuln)},
+        h("div",{style:s.matrixName(m.vuln)},m.name),
+        h("div",{style:s.matrixReason},m.reason),
+        h("div",{style:s.matrixStatus(m.vuln)},m.vuln?"● VULNERABLE":"● NOT AFFECTED")
+      )
+    ))
+  );
+}
+
+function ChainSVG({phase,systemProfile}){
+  const sp=systemProfile;
+  const cs=phase?phase.chainState:(sp&&sp.xzBad&&sp.hasLzma&&sp.hasSystemd?"injected":"clean");
+  const isInjected=cs==="injected"||cs==="runtime";
+  const isRuntime=cs==="runtime"||(phase&&phase.showAttacker);
+  const isDiscovery=cs==="discovery";
+  const no=(p)=>sp?(p?1:0.25):1;
+  const lzmaPresent=sp?sp.hasLzma:true;
+  const sysPresent=sp?sp.hasSystemd:true;
+  const glibcPresent=sp?sp.hasGlibc:true;
+  const sshdPresent=sp?sp.sshdActive:true;
+  const xzBad=sp?sp.xzBad:(isInjected||isDiscovery);
+  const lzmaStroke=xzBad&&lzmaPresent?C.red:lzmaPresent?C.green:C.border2;
+  const lzmaBg=xzBad&&lzmaPresent?"#1A0E0E":C.surface;
+  const lzmaColor=xzBad&&lzmaPresent?C.red:lzmaPresent?C.green:C.muted;
+  const lzmaVer=sp?sp.xzVersion:(isInjected||isDiscovery?"XZ Utils 5.6.0/5.6.1":"XZ Utils 5.4.6");
+  const sshdStroke=isRuntime?C.red:isDiscovery?C.yellow:C.border2;
+  const sshdBg=isRuntime?"#1A0E0E":isDiscovery?"#1A1A0E":C.surface;
+  const buildStroke=isInjected?C.yellow:C.border2;
+  const buildColor=isInjected?C.yellow:C.text;
+  const buildSub=isInjected?"build-to-host.m4 MODIFIED":"Autotools configure script";
+  const tarStroke=isInjected?C.red:C.border2;
+  const tarBg=isInjected?"#1A0E0E":C.surface;
+  const tarColor=isInjected?C.red:C.text;
+  const tarSub=isInjected?"backdoored tarball":"GitHub distribution";
+  const arrN=isRuntime?C.red:C.border2;
+  const NodeBadge=({present,bad,x,y})=>{
+    if(!sp)return null;
+    const col=bad?C.red:present?C.green:C.muted;
+    const lbl=bad?"BACKDOORED":present?"PRESENT":"ABSENT";
+    return h("g",null,
+      h("rect",{x:x-28,y,width:bad?80:58,height:13,rx:3,fill:bad?"#2A0E0E":present?"#1C3A27":"#1A1A1A",stroke:col,strokeWidth:1}),
+      h("text",{x,y:y+7,textAnchor:"middle",fontFamily:"monospace",fontSize:8,fontWeight:700,fill:col,letterSpacing:".05em"},lbl)
+    );
+  };
+  return h("svg",{viewBox:"0 0 500 560",style:{width:"100%",height:"auto",overflow:"visible"}},
+    h("defs",null,
+      h("marker",{id:"aN",markerWidth:8,markerHeight:6,refX:8,refY:3,orient:"auto"},h("polygon",{points:"0 0,8 3,0 6",fill:arrN})),
+      h("marker",{id:"aR",markerWidth:8,markerHeight:6,refX:8,refY:3,orient:"auto"},h("polygon",{points:"0 0,8 3,0 6",fill:C.red})),
+      h("marker",{id:"aG",markerWidth:8,markerHeight:6,refX:8,refY:3,orient:"auto"},h("polygon",{points:"0 0,8 3,0 6",fill:C.green}))
+    ),
+    // SSH Client
+    h("g",{opacity:no(sshdPresent)},
+      h("rect",{x:160,y:12,width:180,height:48,rx:8,fill:C.surface,stroke:isRuntime?C.red:C.border2,strokeWidth:1.5}),
+      h("text",{x:250,y:33,textAnchor:"middle",fontFamily:"monospace",fontSize:12,fontWeight:600,fill:isRuntime?C.red:C.muted},"SSH Client"),
+      h("text",{x:250,y:50,textAnchor:"middle",fontFamily:"monospace",fontSize:9,fill:C.muted,opacity:.7},"remote user / attacker"),
+      isRuntime&&h("text",{x:250,y:7,textAnchor:"middle",fontFamily:"monospace",fontSize:8,fontWeight:700,fill:C.red},"ATTACKER - Ed448 key required")
+    ),
+    h("line",{x1:250,y1:60,x2:250,y2:107,stroke:arrN,strokeWidth:1.5,markerEnd:"url(#aN)"}),
+    // sshd
+    h("g",{opacity:no(sshdPresent)},
+      h("rect",{x:140,y:108,width:220,height:52,rx:8,fill:sshdBg,stroke:sshdStroke,strokeWidth:1.5}),
+      h("text",{x:250,y:129,textAnchor:"middle",fontFamily:"monospace",fontSize:12,fontWeight:600,fill:C.text},"OpenSSH sshd"),
+      h("text",{x:250,y:147,textAnchor:"middle",fontFamily:"monospace",fontSize:9,fill:C.muted,opacity:.7},"v9.7p1 - port 22"),
+      isDiscovery&&h("text",{x:250,y:104,textAnchor:"middle",fontFamily:"monospace",fontSize:8,fontWeight:700,fill:C.green},"ANOMALY DETECTED - +500ms SSH delay"),
+      h(NodeBadge,{present:sshdPresent,bad:false,x:250,y:98})
+    ),
+    // sshd->systemd
+    h("path",{d:"M340,160 Q390,187 380,213",stroke:C.border2,strokeWidth:1.5,fill:"none",markerEnd:"url(#aR)",opacity:no(sysPresent)}),
+    h("text",{x:375,y:185,textAnchor:"middle",fontFamily:"monospace",fontSize:8,fill:C.muted,opacity:no(sysPresent)},"sd_notify patch"),
+    // sshd->lzma
+    h("path",{d:"M220,160 Q210,187 210,213",stroke:C.border2,strokeWidth:1.5,fill:"none",markerEnd:"url(#aR)",opacity:no(lzmaPresent)}),
+    // libsystemd
+    h("g",{opacity:no(sysPresent)},
+      h("rect",{x:285,y:214,width:185,height:48,rx:8,fill:C.surface,stroke:sysPresent?(sp?C.green:C.border2):C.border2,strokeWidth:1.5}),
+      h("text",{x:377,y:234,textAnchor:"middle",fontFamily:"monospace",fontSize:12,fontWeight:600,fill:C.text},"libsystemd"),
+      h("text",{x:377,y:251,textAnchor:"middle",fontFamily:"monospace",fontSize:9,fill:C.muted,opacity:.7},"distro-specific patch"),
+      h(NodeBadge,{present:sysPresent,bad:false,x:377,y:206})
+    ),
+    h("path",{d:"M295,238 L262,238",stroke:C.border2,strokeWidth:1.5,fill:"none",markerEnd:"url(#aR)",opacity:no(sysPresent&&lzmaPresent)}),
+    // liblzma
+    h("g",{opacity:no(lzmaPresent)},
+      h("rect",{x:128,y:214,width:132,height:48,rx:8,fill:lzmaBg,stroke:lzmaStroke,strokeWidth:1.5}),
+      h("text",{x:194,y:234,textAnchor:"middle",fontFamily:"monospace",fontSize:12,fontWeight:600,fill:lzmaColor},"liblzma"),
+      h("text",{x:194,y:251,textAnchor:"middle",fontFamily:"monospace",fontSize:9,fill:lzmaColor,opacity:.7},lzmaVer),
+      !sp&&((xzBad||isDiscovery)
+        ?h("g",null,h("rect",{x:150,y:206,width:88,height:13,rx:3,fill:C.red}),h("text",{x:194,y:213,textAnchor:"middle",fontFamily:"monospace",fontSize:8,fontWeight:700,fill:"white"},"BACKDOORED"))
+        :h("g",null,h("rect",{x:158,y:206,width:60,height:13,rx:3,fill:"#1C3A27",stroke:C.green,strokeWidth:1}),h("text",{x:188,y:213,textAnchor:"middle",fontFamily:"monospace",fontSize:8,fontWeight:700,fill:C.green},"CLEAN"))
+      ),
+      sp&&h(NodeBadge,{present:lzmaPresent,bad:lzmaPresent&&xzBad,x:194,y:206})
+    ),
+    h("path",{d:"M165,262 L165,317",stroke:C.border2,strokeWidth:1.5,fill:"none",markerEnd:"url(#aR)",opacity:no(lzmaPresent)}),
+    // Build System
+    h("rect",{x:48,y:318,width:204,height:52,rx:8,fill:C.surface,stroke:buildStroke,strokeWidth:1.5}),
+    h("text",{x:150,y:338,textAnchor:"middle",fontFamily:"monospace",fontSize:12,fontWeight:600,fill:buildColor},"Build System"),
+    h("text",{x:150,y:356,textAnchor:"middle",fontFamily:"monospace",fontSize:9,fill:buildColor,opacity:.7},buildSub),
+    // Tarball
+    h("rect",{x:288,y:318,width:172,height:52,rx:8,fill:tarBg,stroke:tarStroke,strokeWidth:1.5}),
+    h("text",{x:374,y:338,textAnchor:"middle",fontFamily:"monospace",fontSize:12,fontWeight:600,fill:tarColor},"Release Tarball"),
+    h("text",{x:374,y:356,textAnchor:"middle",fontFamily:"monospace",fontSize:9,fill:tarColor,opacity:.7},tarSub),
+    h("path",{d:"M298,344 L254,344",stroke:isInjected?C.red:C.border2,strokeWidth:1.5,fill:"none",strokeDasharray:isInjected?"5 3":"0",markerEnd:"url(#aR)"}),
+    h("text",{x:275,y:337,textAnchor:"middle",fontFamily:"monospace",fontSize:8,fill:C.muted},"compile-time"),
+    // glibc
+    h("g",{opacity:no(glibcPresent)},
+      h("rect",{x:328,y:424,width:144,height:48,rx:8,fill:C.surface,stroke:glibcPresent?(sp?C.green:C.border2):C.border2,strokeWidth:1.5}),
+      h("text",{x:400,y:444,textAnchor:"middle",fontFamily:"monospace",fontSize:12,fontWeight:600,fill:C.text},"glibc"),
+      h("text",{x:400,y:461,textAnchor:"middle",fontFamily:"monospace",fontSize:9,fill:C.muted,opacity:.7},"IFUNC resolver"),
+      h(NodeBadge,{present:glibcPresent,bad:false,x:400,y:416})
+    ),
+    // Injected
+    isInjected&&h("g",null,
+      h("path",{d:"M170,370 L185,423",stroke:C.red,strokeWidth:1.5,fill:"none",strokeDasharray:"5 3",markerEnd:"url(#aR)"}),
+      h("rect",{x:98,y:424,width:204,height:52,rx:8,fill:"#1A0E0E",stroke:C.red,strokeWidth:1.5}),
+      h("text",{x:200,y:444,textAnchor:"middle",fontFamily:"monospace",fontSize:12,fontWeight:600,fill:C.red},"Malicious Object"),
+      h("text",{x:200,y:461,textAnchor:"middle",fontFamily:"monospace",fontSize:9,fill:C.red,opacity:.7},"injected .o file - IFUNC hook"),
+      h("path",{d:"M128,430 Q95,340 163,263",stroke:C.red,strokeWidth:1.5,fill:"none",strokeDasharray:"4 3",markerEnd:"url(#aR)"})
+    ),
+    // Runtime
+    isRuntime&&h("g",null,
+      h("path",{d:"M378,472 Q328,490 283,508",stroke:C.red,strokeWidth:1.5,fill:"none",strokeDasharray:"5 3",markerEnd:"url(#aR)"}),
+      h("path",{d:"M193,262 Q183,430 223,507",stroke:C.red,strokeWidth:1.5,fill:"none",strokeDasharray:"4 3",markerEnd:"url(#aR)"}),
+      h("rect",{x:128,y:508,width:244,height:44,rx:8,fill:"#1A0E0E",stroke:C.red,strokeWidth:1.5}),
+      h("text",{x:250,y:526,textAnchor:"middle",fontFamily:"monospace",fontSize:12,fontWeight:600,fill:C.red},"RSA_public_decrypt()"),
+      h("text",{x:250,y:543,textAnchor:"middle",fontFamily:"monospace",fontSize:9,fill:C.red,opacity:.7},"hooked - auth bypass active")
+    ),
+    sp&&h("text",{x:250,y:555,textAnchor:"middle",fontFamily:"monospace",fontSize:9,fill:sp.xzBad&&sp.hasLzma&&sp.hasSystemd&&sp.hasGlibc&&sp.sshdActive?C.red:C.green},
+      sp.xzBad&&sp.hasLzma&&sp.hasSystemd&&sp.hasGlibc&&sp.sshdActive
+        ?"⚠  Full attack chain present on this system"
+        :"✓  Attack chain incomplete - system not fully exploitable"
+    )
+  );
+}
+
+const CMDS=[{label:"XZ version",cmd:"xz --version"},{label:"sshd dependencies",cmd:"ldd /usr/sbin/sshd"},{label:"SSH daemon status",cmd:"systemctl is-active ssh"}];
+const PLACEHOLDERS={
+  xz:"xz (XZ Utils) 5.6.1\nliblzma 5.6.1",
+  ldd:"linux-vdso.so.1\nlibsystemd.so.0 => /lib/x86_64-linux-gnu/libsystemd.so.0\nliblzma.so.5 => /lib/x86_64-linux-gnu/liblzma.so.5\nlibc.so.6 => /lib/x86_64-linux-gnu/libc.so.6",
+  sshd:"active (running) since Fri 2024-03-29 11:42:01 UTC",
+};
+const remLines=[
+  {t:"c",v:"# Debian / Ubuntu"},{t:"g",v:"$ sudo apt install xz-utils=5.4.6-0.2"},
+  {t:"n",v:""},{t:"c",v:"# Fedora / RHEL"},{t:"g",v:"$ sudo dnf downgrade xz-5.4.6"},
+  {t:"n",v:""},{t:"c",v:"# Verify"},{t:"g",v:"$ xz --version   # must show 5.4.x"},
+];
+
+const TA=({label,cmd,value,onChange,ph})=>h("div",{style:{display:"flex",flexDirection:"column",gap:5}},
+    h("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between"}},
+      h("span",{style:s.taLabel},label),h("span",{style:s.taCmd},cmd)),
+    h("textarea",{value,onChange:e=>onChange(e.target.value),placeholder:ph,rows:3,style:s.textarea})
+  );
+
+function SystemChecker({onVisualise}){
+  const [xz,setXz]=useState("");
+  const [ldd,setLdd]=useState("");
+  const [ssh,setSsh]=useState("");
+  const [result,setResult]=useState(null);
+  const run=useCallback(()=>{if(!xz.trim()&&!ldd.trim()&&!ssh.trim())return;setResult(checkVulnerability(xz,ldd,ssh));},[xz,ldd,ssh]);
+  const reset=()=>{setXz("");setLdd("");setSsh("");setResult(null);};
+
+  return h("div",{style:s.checkerGrid},
+    h("div",{style:s.inputSide},
+      h("div",null,
+        h("div",{style:{fontSize:14,fontWeight:600,color:C.text,marginBottom:4}},"System Vulnerability Checker"),
+        h("div",{style:{fontSize:11,color:C.muted,lineHeight:1.7}},"Run the three commands on your target system and paste the output. The checker evaluates whether that system satisfies all five conditions for CVE-2024-3094 exploitation.")
+      ),
+      h("div",{style:s.cmdBox},
+        h("div",{style:s.cmdLabel},"Commands to run"),
+        ...CMDS.map((c,i)=>h("div",{key:i,style:s.cmdRow},h("span",{style:s.cmdName},c.label),h("span",{style:s.cmdVal},c.cmd)))
+      ),
+      h(TA,{label:"1. XZ Version",cmd:"xz --version",value:xz,onChange:setXz,ph:PLACEHOLDERS.xz}),
+      h(TA,{label:"2. sshd ldd output",cmd:"ldd /usr/sbin/sshd",value:ldd,onChange:setLdd,ph:PLACEHOLDERS.ldd}),
+      h(TA,{label:"3. SSH status",cmd:"systemctl is-active ssh",value:ssh,onChange:setSsh,ph:PLACEHOLDERS.sshd}),
+      h("div",{style:{display:"flex",gap:8}},
+        h("button",{onClick:run,style:s.analyseBtn},"ANALYSE SYSTEM"),
+        h("button",{onClick:reset,style:s.resetBtn},"RESET")
+      )
+    ),
+    h("div",{style:s.resultSide},
+      !result&&h("div",{style:{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flex:1,gap:10,opacity:.35,paddingTop:80}},
+        h("div",{style:{fontFamily:"monospace",fontSize:36}},"⌕"),
+        h("div",{style:{fontFamily:"monospace",fontSize:11,color:C.muted,textAlign:"center"}},"Paste command output on the left\nand click Analyse System")
+      ),
+      result&&h("div",{style:{display:"flex",flexDirection:"column",gap:14}},
+        h("div",{style:s.verdict(result.vulnerable)},
+          h("div",{style:s.eyebrow},"Verdict"),
+          h("div",{style:s.verdictTitle(result.vulnerable)},result.vulnerable?"VULNERABLE":"NOT VULNERABLE"),
+          h("div",{style:{fontSize:11,color:C.muted,lineHeight:1.6}},result.vulnerable
+            ?"This system satisfies all conditions for exploitation of CVE-2024-3094. The backdoored liblzma is loaded into sshd and the IFUNC hook path is complete. Immediate downgrade to XZ 5.4.6 required."
+            :"This system does not satisfy all conditions for exploitation. At least one critical dependency in the attack chain is absent.")
+        ),
+        h("button",{onClick:()=>onVisualise(result.systemProfile),style:s.visualBtn},"⬡ VISUALISE THIS SYSTEM'S DEPENDENCY CHAIN"),
+        h("div",{style:s.iamNote},"Condition Breakdown"),
+        ...result.checks.map((c,i)=>h("div",{key:i,style:s.checkCard},
+          h("div",{style:s.checkTop},
+            h("span",{style:s.checkName},c.label),
+            h("span",{style:s.checkBadge(c.status)},c.status==="fail"?"FAIL":c.status==="pass"?"PASS":"UNKNOWN")
+          ),
+          h("div",{style:s.checkDetail},c.detail)
+        )),
+        result.vulnerable&&h("div",{style:s.remBox},
+          h("div",{style:s.remTitle},"Remediation"),
+          h("div",{style:s.remCode},...remLines.map((l,i)=>h("div",{key:i,style:{color:l.t==="c"?C.muted:l.t==="g"?C.green:C.text}},l.v||"\u00a0")))
+        )
+      )
+    )
+  );
+}
+
+function Visualiser({systemProfile,onClearProfile}){
+  const [active,setActive]=useState(0);
+  const phase=phases[active];
+  const accentOf=(p)=>p.color==="red"?C.red:p.color==="yellow"?C.yellow:p.color==="green"?C.green:C.blue;
+  const effectivePhase=systemProfile?null:phase;
+  return h("div",{style:s.body},
+    // Left
+    h("div",{style:s.leftPanel},
+      systemProfile&&h("div",{style:s.liveBox},
+        h("div",{style:s.liveLabel},"Live System View"),
+        h("div",{style:s.liveDesc},"Chain reflects your actual system's library profile from the checker."),
+        h("button",{onClick:onClearProfile,style:s.clearBtn},"CLEAR - SHOW GENERIC CHAIN")
+      ),
+      ...phaseGroups.map((g,gi)=>h("div",{key:gi},
+        h("div",{style:{...s.groupLabel,marginTop:gi>0?10:0}},g.label),
+        ...g.indices.map(i=>{
+          const p=phases[i];const ac=accentOf(p);const isAct=active===i&&!systemProfile;
+          return h("div",{key:i,onClick:()=>{setActive(i);if(systemProfile)onClearProfile();},style:s.phaseItem(isAct,ac)},
+            h("div",{style:s.phaseDot(isAct,ac)}),
+            h("div",null,
+              h("div",{style:s.phaseDate},p.eyebrow.split("·")[0].trim()),
+              h("div",{style:s.phaseTitle},p.heading)
+            )
+          );
+        }),
+        gi<phaseGroups.length-1&&h("div",{style:s.divider})
+      ))
+    ),
+    h("div",{style:s.canvas},
+      h("div",{style:s.canvasTitle},systemProfile?`Live System - XZ ${systemProfile.xzVersion}`:phase.heading),
+      h("div",{style:{width:"100%",maxWidth:490}},h(ChainSVG,{phase:effectivePhase,systemProfile})),
+      !systemProfile&&phase.showMatrix&&h(VulnMatrix)
+    ),
+    h("div",{style:s.infoPanel},
+      systemProfile?h("div",{style:{display:"flex",flexDirection:"column",gap:14}},
+        h("div",null,
+          h("div",{style:{...s.eyebrow,color:C.blue}},"Live System Profile"),
+          h("div",{style:s.infoTitle},"Your System's Dependency Chain"),
+          h("div",{style:s.infoBody},"The chain diagram reflects the actual libraries present on your system as reported by ldd. Dimmed nodes are absent. Highlighted nodes are active.")
+        ),
+        h("div",{style:s.divLine}),
+        ...[
+          {label:"XZ Version",value:systemProfile.xzVersion,bad:systemProfile.xzBad},
+          {label:"liblzma linked",value:systemProfile.hasLzma?"YES":"NO",bad:systemProfile.hasLzma},
+          {label:"libsystemd",value:systemProfile.hasSystemd?"YES":"NO",bad:systemProfile.hasSystemd},
+          {label:"glibc (IFUNC)",value:systemProfile.hasGlibc?"YES":"NO",bad:systemProfile.hasGlibc},
+          {label:"sshd active",value:systemProfile.sshdActive?"YES":"NO",bad:systemProfile.sshdActive},
+        ].map((r,i)=>h("div",{key:i,style:s.profileRow},
+          h("span",{style:s.profileLabel},r.label),
+          h("span",{style:s.profileVal(r.bad)},r.value)
+        )),
+        h("div",{style:s.divLine}),
+        h("div",{style:{fontSize:11,color:C.muted,lineHeight:1.7}},"Click any phase in the left panel to switch back to the generic attack visualiser.")
+      ):h("div",{style:{display:"flex",flexDirection:"column",gap:14}},
+        h("div",null,
+          h("div",{style:s.eyebrow},phase.eyebrow),
+          h("div",{style:s.infoTitle},phase.heading),
+          h("div",{style:s.infoBody},...phase.body.split("\n").map((line,i,arr)=>h("span",{key:i},line,i<arr.length-1&&h("br"))))
+        ),
+        phase.code&&h(CodeBlock,{lines:phase.code}),
+        phase.tags&&phase.tags.length>0&&h("div",{style:s.tagRow},...phase.tags.map(([c,l],i)=>h(Tag,{key:i,color:c,label:l}))),
+        phase.iam&&h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+          h("div",{style:s.divLine}),
+          h("div",{style:s.iamNote},"IAM Note"),
+          h("div",{style:s.infoBody},h("span",{style:{color:C.text,fontWeight:500}},phase.iam.control),h("br"),h("br"),phase.iam.failure)
+        ),
+        phase.showIAMTable&&h("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+          h("div",{style:s.divLine}),
+          h("div",{style:s.iamNote},"Control Effectiveness"),
+          h(IAMTable)
+        )
+      )
+    )
+  );
+}
+
+function App(){
+  const [tab,setTab]=useState("visualiser");
+  const [systemProfile,setSystemProfile]=useState(null);
+  const handleVisualise=(profile)=>{setSystemProfile(profile);setTab("visualiser");};
+  const TabBtn=({id,label})=>h("button",{onClick:()=>setTab(id),style:s.tab(tab===id)},label);
+  return h("div",{style:s.page},
+    h("div",{style:s.hdr},
+      h("span",{style:s.badge(C.red,"none","#fff")},"CVE-2024-3094"),
+      h("span",{style:s.badge("transparent",`1px solid ${C.red}`,C.red)},"CVSS 10.0"),
+      h("span",{style:{fontFamily:"monospace",fontSize:12,fontWeight:600,color:C.text,flex:1}},"XZ Utils Backdoor - Research Toolkit"),
+      systemProfile&&tab==="visualiser"&&h("span",{style:s.badge("rgba(88,166,255,.15)","1px solid rgba(88,166,255,.3)",C.blue)},"LIVE SYSTEM VIEW"),
+      h("div",{style:s.tabWrap},h(TabBtn,{id:"visualiser",label:"ATTACK VISUALISER"}),h(TabBtn,{id:"checker",label:"SYSTEM CHECKER"}))
+    ),
+    tab==="checker"
+      ?h(SystemChecker,{onVisualise:handleVisualise})
+      :h(Visualiser,{systemProfile,onClearProfile:()=>setSystemProfile(null)})
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+</script>
+</body>
+</html>
