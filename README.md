@@ -18,6 +18,8 @@ This tool provides two things:
 - **Attack Visualiser** - an interactive dependency chain diagram stepping through all 13 phases of the attack, from account creation through coordinated response
 - **System Checker** - paste output from three Linux commands to evaluate whether a specific system would have been vulnerable, with results linked back to the dependency chain visualiser
 
+An upgraded version of the System Checker with extended CVE coverage and additional vulnerability assessment features is available in the `/CVE-Vulnerability-Assessment-Tool` folder.
+
 ---
 
 ## How to use
